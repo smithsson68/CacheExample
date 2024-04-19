@@ -108,7 +108,7 @@ namespace PaulSmith.CacheExample.Tests
         }
 
         [Fact]
-        public void Should_NotGet_When_ValueNotCached()
+        public void Should_Not_Get_When_ValueNotCached()
         {
             // Arrange
             var sut = new InMemoryCache();

@@ -22,6 +22,8 @@ namespace PaulSmith.CacheExample
         /// a new insertion causes eviction of the least used value</param>
         public InMemoryCache(int maxItemCount = 100)
         {
+            if (maxItemCount <= 0) throw new ArgumentException("Must be a positive value greater than zero", nameof(maxItemCount));
+
             MaxItemCount = maxItemCount;
             _cachedItems = new Dictionary<object, CachedItem>(maxItemCount);
         }
@@ -114,22 +116,24 @@ namespace PaulSmith.CacheExample
 
             try
             {
-                if (_cachedItems.TryGetValue(key, out var cachedItem))
+                if (_cachedItems.ContainsKey(key))
                 {
                     _cacheLock.EnterWriteLock();
 
                     try
                     {
-                        // Because the item has been accessed it moves to the bottom of the last accessed list
-                        MoveToTop(cachedItem.LastAccessedNode);
+                        // Ensure item still cached
+                        if (_cachedItems.TryGetValue(key, out var cachedItem))
+                        {
+                            SetNodeAccessed(cachedItem.LastAccessedNode);
+                            value = (TValue)cachedItem.Value;
+                            return true;
+                        }
                     }
                     finally
                     {
                         _cacheLock.ExitWriteLock();
                     }
-
-                    value = (TValue)cachedItem.Value;
-                    return true;
                 }
             }
             finally
@@ -184,14 +188,14 @@ namespace PaulSmith.CacheExample
 
         private void EvictLeastAccessed()
         {
-            // Remove the least accessed item which be the first node in our list
-            var leastAccessedItem = _lastAccessedList.Last;
-            var existingCachedItem = _cachedItems[leastAccessedItem!.Value];
+            // Remove the least accessed item which be the last node in our list
+            var leastAccessedNode = _lastAccessedList.Last;
+            var existingCachedItem = _cachedItems[leastAccessedNode!.Value];
 
             existingCachedItem.EvictedFromCacheHandler?.Invoke();
 
             _lastAccessedList.RemoveLast();
-            _cachedItems.Remove(leastAccessedItem.Value);
+            _cachedItems.Remove(leastAccessedNode.Value);
         }
 
         private void UpdateExisting<TKey, TValue>(
@@ -201,8 +205,7 @@ namespace PaulSmith.CacheExample
         {
             var existingCachedItem = _cachedItems[key];
 
-            // Move item to the bottom of last accessed list
-            MoveToTop(existingCachedItem.LastAccessedNode);
+            SetNodeAccessed(existingCachedItem.LastAccessedNode);
 
             // Update the item
             _cachedItems[key] =
@@ -212,8 +215,9 @@ namespace PaulSmith.CacheExample
                     MakeEvictedFromCacheHandler(key, value, evictedFromCacheHandler));
         }
 
-        private void MoveToTop(LinkedListNode<object> node)
+        private void SetNodeAccessed(LinkedListNode<object> node)
         {
+            // Accessed nodes move to the top of the list
             if (node != _lastAccessedList.First)
             {
                 _lastAccessedList.Remove(node);
